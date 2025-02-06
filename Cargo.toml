@@ -1,0 +1,20 @@
+[package]
+name = "minchash"
+version = "0.1.0"
+authors = ["Mika Sanchez <keyneom122@hotmail.com>"]
+edition = "2021"
+
+[dependencies]
+k256 = "0.11"
+sha2 = "0.10"
+hex = "0.4"
+rayon = "1.10"
+
+[dev-dependencies]
+itertools = "0.10.3"
+rand = "0.8"
+criterion = "0.4"
+
+[[bench]]
+name = "benchmarks"
+harness = false
