@@ -120,33 +120,46 @@ impl FastMultisetHash {
     /// We use four parallel FNV‑1a–like accumulators (all seeded with the FNV offset
     /// basis) and update them in round‑robin fashion over the input data.
     fn simple_hash_256(data: &[u8]) -> [u64; 4] {
+        // Use the FNV offset basis as our initial value for each accumulator.
         let mut h1: u64 = 0xcbf29ce484222325;
         let mut h2: u64 = 0xcbf29ce484222325;
         let mut h3: u64 = 0xcbf29ce484222325;
         let mut h4: u64 = 0xcbf29ce484222325;
+        // A common prime constant (the FNV prime) is used for the multiplication.
+        let prime: u64 = 0x100000001b3;
+        
         for (i, &b) in data.iter().enumerate() {
             match i % 4 {
                 0 => {
-                    h1 ^= b as u64;
-                    h1 = h1.wrapping_mul(0x100000001b3);
-                }
+                    h1 = h1.wrapping_add(b as u64);       // Addition
+                    h1 = h1.rotate_left(13);                // Rotation (rotate left by 13 bits)
+                    h1 ^= b as u64;                         // XOR with the byte
+                    h1 = h1.wrapping_mul(prime);            // Multiplication
+                },
                 1 => {
+                    h2 = h2.wrapping_add(b as u64);
+                    h2 = h2.rotate_left(17);
                     h2 ^= b as u64;
-                    h2 = h2.wrapping_mul(0x100000001b3);
-                }
+                    h2 = h2.wrapping_mul(prime);
+                },
                 2 => {
+                    h3 = h3.wrapping_add(b as u64);
+                    h3 = h3.rotate_left(19);
                     h3 ^= b as u64;
-                    h3 = h3.wrapping_mul(0x100000001b3);
-                }
+                    h3 = h3.wrapping_mul(prime);
+                },
                 3 => {
+                    h4 = h4.wrapping_add(b as u64);
+                    h4 = h4.rotate_left(23);
                     h4 ^= b as u64;
-                    h4 = h4.wrapping_mul(0x100000001b3);
-                }
+                    h4 = h4.wrapping_mul(prime);
+                },
                 _ => unreachable!(),
             }
         }
         [h1, h2, h3, h4]
     }
+    
 
     /// Helper: wrapping addition of two 256‑bit values.
     fn add_256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
