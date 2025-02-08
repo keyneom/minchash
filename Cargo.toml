@@ -1,14 +1,14 @@
 [package]
 name = "minchash"
 description = "Multiset Incremental Hash Lib in Rust"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Mika Sanchez <keyneom122@hotmail.com>"]
 edition = "2021"
 license = "MIT"
 
 [dependencies]
 k256 = "0.11"
-sha2 = "0.10"
+blake3 = "1.5"
 hex = "0.4"
 rayon = "1.10"
 
