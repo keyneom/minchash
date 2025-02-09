@@ -5,6 +5,7 @@ version = "0.3.1"
 authors = ["Mika Sanchez <keyneom122@hotmail.com>"]
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/keyneom/minchash"
 
 [dependencies]
 k256 = "0.11"
