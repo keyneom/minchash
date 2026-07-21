@@ -1,10 +1,16 @@
 [package]
 name = "minchash"
 description = "Multiset Incremental Hash Lib in Rust"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Mika Sanchez <keyneom122@hotmail.com>"]
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/keyneom/minchash"
+homepage = "https://github.com/keyneom/minchash"
+documentation = "https://docs.rs/minchash"
+readme = "README.md"
+keywords = ["multiset", "hash", "incremental", "cryptography", "ecmh"]
+categories = ["cryptography", "algorithms", "data-structures"]
 
 [dependencies]
 k256 = "0.11"

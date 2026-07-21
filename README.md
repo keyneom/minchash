@@ -1,17 +1,75 @@
 # minchash
-Multiset Incremental Hash Lib in Rust
 
-A Rust library implementing an order-independent hash function for multisets using elliptic curve cryptography. Supports efficient incremental addition and removal of elements, with the ability to process bulk operations in parallel for improved performance.
+Multiset Incremental Hash library in Rust.
 
-## Key features:
-- **Incremental Updates:** Supports adding or removing elements individually, updating the hash without recomputing it from scratch.
-- **Bulk Operations with Parallel Processing:** Provides methods to add or remove multiple elements at once, leveraging parallel processing for enhanced performance on large datasets.
-- **Elliptic Curve Cryptography:** Uses elliptic curve group operations to compute the hash, providing strong cryptographic properties.
-- **Ideal for Unordered Collections:** Suited for applications that require hashing or comparing multisets where element order is irrelevant, such as in data synchronization, integrity verification, or cryptographic protocols.
+Order-independent hashing for multisets with efficient incremental add/remove, parallel bulk updates, and (for the secure variant) elliptic-curve cryptography.
 
-The library currently only accepts string elements but could be modified to handle raw bytearrays, etc.
+## Install
 
-## Potential Uses
-- **Instant Hash Verification of Unordered Data Streams:** Enable immediate hash verification of data received in chunks and in any order, such as torrents or streaming data. With this library, you can compute the hash incrementally as data arrives, without waiting to receive all of the data first. As long as the order of the data isn't critical to your application, this approach allows for faster verification. In many cases, processing data out of order doesn't introduce security vulnerabilities, making this a practical tradeoff for improved performance.
-- **Enhancing Efficiency in Combinatorial Algorithms:** Optimize branch search algorithms where the solution space is combinatorial, but your exploration order varies (permutational). By utilizing the order-agnostic multiset hash to keep track of visited states, you can detect and avoid re-exploring equivalent subspaces reached through different paths. This prevents redundant computations and accelerates the search process by pruning the exploration tree of duplicate states.
-- **Memory-Efficient Comparison of Large Multisets:** When comparing two large lists (possibly with duplicate elements) in distributed systems, element-by-element comparison is often impractical due to memory and network constraints. By computing the multiset hash of each list using this library, you can efficiently determine if the lists are equivalent in terms of element occurrences, regardless of order. If the hashes match, the lists contain the same elements with the same frequencies. This approach greatly reduces memory usage and network overhead, making it ideal for handling large or distributed datasets.
+```toml
+[dependencies]
+minchash = "0.4"
+```
+
+## Quick example
+
+```rust
+use minchash::{MultisetHash, SecureMultisetHash};
+
+fn main() {
+    let mut a = SecureMultisetHash::new();
+    a.add(b"apple");
+    a.add(b"banana");
+
+    let mut b = SecureMultisetHash::new();
+    b.add(b"banana");
+    b.add(b"apple");
+
+    // Order does not matter
+    assert_eq!(a.get_digest(), b.get_digest());
+
+    // Bytes are first-class — any `&[u8]` works
+    a.add(&[0xde, 0xad, 0xbe, 0xef]);
+
+    // Homomorphic merge of independent hashes
+    let mut left = SecureMultisetHash::new();
+    left.add(b"x");
+    let mut right = SecureMultisetHash::new();
+    right.add(b"y");
+    let merged = left.combine(&right);
+    let mut expected = SecureMultisetHash::new();
+    expected.add(b"x");
+    expected.add(b"y");
+    assert_eq!(merged.get_compressed(), expected.get_compressed());
+}
+```
+
+## Secure vs Fast
+
+| | `SecureMultisetHash` | `FastMultisetHash` |
+|---|---|---|
+| **Construction** | blake3 → secp256k1 scalar × generator (ECMH-style) | Custom 4×u64 FNV-like mix + wrapping limb add |
+| **Threat model** | Collision / forgery hard under the elliptic-curve discrete-log assumption | **Not cryptographically secure** — fine for checksums, caches, search pruning; do **not** use against adversaries |
+| **Digest** | blake3 of compressed EC point | Raw 32-byte limb state |
+| **Speed** | Slower (EC ops); parallel bulk helps | Extremely fast |
+
+Pick **Secure** when hashes may be compared across trust boundaries or used for integrity. Pick **Fast** when you only need order-independent equality / bookkeeping in a trusted setting.
+
+## Key features
+
+- **Incremental updates** — add or remove elements without recomputing from scratch
+- **Multiplicity** — `add_with_count` / `remove_with_count` for repeated elements
+- **Homomorphic combine / difference** — merge or subtract independent hashes (`+` / `-` operators too)
+- **State bytes** — `to_compressed_bytes` / `try_from_compressed_bytes` for wire / storage round-trips
+- **Parallel bulk ops** — `add_elements` / `remove_elements` via rayon
+- **Element type** — any byte slice (`&[u8]`, strings via `.as_bytes()`, etc.)
+
+## Potential uses
+
+- **Unordered stream verification** — hash chunks as they arrive in any order (e.g. torrents), then compare digests
+- **Combinatorial search** — detect equivalent subspaces reached via different permutations
+- **Distributed multiset compare** — hash locally, combine hashes, compare without shipping full collections
+
+## License
+
+MIT
