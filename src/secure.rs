@@ -1,15 +1,37 @@
-use k256::{ProjectivePoint, Scalar};
+use crate::{DecodeError, MultisetHash};
 use blake3;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::elliptic_curve::bigint::U256;
 use k256::elliptic_curve::ops::Reduce;
+use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use k256::{AffinePoint, EncodedPoint, ProjectivePoint, Scalar};
 use rayon::prelude::*;
-use crate::MultisetHash;
 
 #[derive(Clone)]
 pub struct SecureMultisetHash {
-    pub current: ProjectivePoint,
+    current: ProjectivePoint,
 }
+
+impl Default for SecureMultisetHash {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for SecureMultisetHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecureMultisetHash")
+            .field("compressed", &self.to_compressed_bytes())
+            .finish()
+    }
+}
+
+impl PartialEq for SecureMultisetHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.current.to_affine() == other.current.to_affine()
+    }
+}
+
+impl Eq for SecureMultisetHash {}
 
 impl SecureMultisetHash {
     pub fn new() -> Self {
@@ -24,6 +46,20 @@ impl SecureMultisetHash {
 
     pub fn remove(&mut self, data: &[u8]) {
         self.current += -Self::h(data);
+    }
+
+    pub fn add_with_count(&mut self, data: &[u8], count: u64) {
+        if count == 0 {
+            return;
+        }
+        self.current += Self::h(data) * Scalar::from(count);
+    }
+
+    pub fn remove_with_count(&mut self, data: &[u8], count: u64) {
+        if count == 0 {
+            return;
+        }
+        self.current += -(Self::h(data) * Scalar::from(count));
     }
 
     pub fn add_elements<'a, T>(&mut self, elements: &'a [T])
@@ -48,6 +84,18 @@ impl SecureMultisetHash {
         self.current += sum;
     }
 
+    pub fn combine(&self, other: &Self) -> Self {
+        Self {
+            current: self.current + other.current,
+        }
+    }
+
+    pub fn difference(&self, other: &Self) -> Self {
+        Self {
+            current: self.current + (-other.current),
+        }
+    }
+
     pub fn get_compressed(&self) -> Option<Vec<u8>> {
         if self.current == ProjectivePoint::IDENTITY {
             None
@@ -65,12 +113,106 @@ impl SecureMultisetHash {
         })
     }
 
+    pub fn to_compressed_bytes(&self) -> Vec<u8> {
+        if self.current == ProjectivePoint::IDENTITY {
+            // SEC1 encoding of the point at infinity
+            vec![0x00]
+        } else {
+            let affine = self.current.to_affine();
+            affine.to_encoded_point(true).as_bytes().to_vec()
+        }
+    }
+
+    pub fn try_from_compressed_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        if bytes == [0x00] {
+            return Ok(Self::new());
+        }
+        let encoded = EncodedPoint::from_bytes(bytes).map_err(|_| DecodeError)?;
+        let affine = Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&encoded))
+            .ok_or(DecodeError)?;
+        Ok(Self {
+            current: ProjectivePoint::from(affine),
+        })
+    }
+
     /// Helper function to hash an element (byte slice) to an EC point.
     fn h(data: &[u8]) -> ProjectivePoint {
         let hash = blake3::hash(data);
         let digest: [u8; 32] = *hash.as_bytes();
         let scalar = <Scalar as Reduce<U256>>::from_be_bytes_reduced(digest.into());
         ProjectivePoint::GENERATOR * scalar
+    }
+}
+
+impl std::ops::Add for SecureMultisetHash {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.combine(&rhs)
+    }
+}
+
+impl std::ops::Add<&SecureMultisetHash> for SecureMultisetHash {
+    type Output = Self;
+
+    fn add(self, rhs: &SecureMultisetHash) -> Self::Output {
+        self.combine(rhs)
+    }
+}
+
+impl std::ops::Add for &SecureMultisetHash {
+    type Output = SecureMultisetHash;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.combine(rhs)
+    }
+}
+
+impl std::ops::Sub for &SecureMultisetHash {
+    type Output = SecureMultisetHash;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.difference(rhs)
+    }
+}
+
+impl std::ops::AddAssign for SecureMultisetHash {
+    fn add_assign(&mut self, rhs: Self) {
+        self.current += rhs.current;
+    }
+}
+
+impl std::ops::AddAssign<&SecureMultisetHash> for SecureMultisetHash {
+    fn add_assign(&mut self, rhs: &SecureMultisetHash) {
+        self.current += rhs.current;
+    }
+}
+
+impl std::ops::Sub for SecureMultisetHash {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.difference(&rhs)
+    }
+}
+
+impl std::ops::Sub<&SecureMultisetHash> for SecureMultisetHash {
+    type Output = Self;
+
+    fn sub(self, rhs: &SecureMultisetHash) -> Self::Output {
+        self.difference(rhs)
+    }
+}
+
+impl std::ops::SubAssign for SecureMultisetHash {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.current += -rhs.current;
+    }
+}
+
+impl std::ops::SubAssign<&SecureMultisetHash> for SecureMultisetHash {
+    fn sub_assign(&mut self, rhs: &SecureMultisetHash) {
+        self.current += -rhs.current;
     }
 }
 
@@ -87,6 +229,14 @@ impl MultisetHash for SecureMultisetHash {
         self.remove(data)
     }
 
+    fn add_with_count(&mut self, data: &[u8], count: u64) {
+        self.add_with_count(data, count)
+    }
+
+    fn remove_with_count(&mut self, data: &[u8], count: u64) {
+        self.remove_with_count(data, count)
+    }
+
     fn add_elements<'a, T>(&mut self, elements: &'a [T])
     where
         T: AsRef<[u8]> + Sync,
@@ -101,6 +251,14 @@ impl MultisetHash for SecureMultisetHash {
         self.remove_elements(elements)
     }
 
+    fn combine(&self, other: &Self) -> Self {
+        self.combine(other)
+    }
+
+    fn difference(&self, other: &Self) -> Self {
+        self.difference(other)
+    }
+
     fn get_compressed(&self) -> Option<Vec<u8>> {
         self.get_compressed()
     }
@@ -108,14 +266,21 @@ impl MultisetHash for SecureMultisetHash {
     fn get_digest(&self) -> Option<Vec<u8>> {
         self.get_digest()
     }
+
+    fn to_compressed_bytes(&self) -> Vec<u8> {
+        self.to_compressed_bytes()
+    }
+
+    fn try_from_compressed_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Self::try_from_compressed_bytes(bytes)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use k256::Scalar;
-    use std::collections::HashMap;
     use rand::prelude::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_complex_random_operations() {
@@ -139,14 +304,12 @@ mod tests {
             if op == 0 {
                 ms.add(elem.as_bytes());
                 *counts.get_mut(&elem).unwrap() += 1;
+            } else if *counts.get(&elem).unwrap() > 0 {
+                ms.remove(elem.as_bytes());
+                *counts.get_mut(&elem).unwrap() -= 1;
             } else {
-                if *counts.get(&elem).unwrap() > 0 {
-                    ms.remove(elem.as_bytes());
-                    *counts.get_mut(&elem).unwrap() -= 1;
-                } else {
-                    ms.add(elem.as_bytes());
-                    *counts.get_mut(&elem).unwrap() += 1;
-                }
+                ms.add(elem.as_bytes());
+                *counts.get_mut(&elem).unwrap() += 1;
             }
         }
 
@@ -166,5 +329,32 @@ mod tests {
             ms_affine, expected_affine,
             "The running multiset hash does not match the expected hash computed from the final multiset."
         );
+    }
+
+    #[test]
+    fn test_combine_matches_union() {
+        let mut left = SecureMultisetHash::new();
+        left.add_with_count(b"a", 2);
+        left.add(b"b");
+
+        let mut right = SecureMultisetHash::new();
+        right.add(b"c");
+
+        let merged = &left + &right;
+        let mut expected = SecureMultisetHash::new();
+        expected.add_with_count(b"a", 2);
+        expected.add(b"b");
+        expected.add(b"c");
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_bytes_round_trip_continue() {
+        let mut ms = SecureMultisetHash::new();
+        ms.add(b"hello");
+        let restored =
+            SecureMultisetHash::try_from_compressed_bytes(&ms.to_compressed_bytes()).unwrap();
+        assert_eq!(ms, restored);
+        assert!(SecureMultisetHash::try_from_compressed_bytes(&[0xff, 0x00]).is_err());
     }
 }
