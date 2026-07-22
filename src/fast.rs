@@ -1,4 +1,5 @@
 use crate::{DecodeError, MultisetHash};
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,30 +50,48 @@ impl FastMultisetHash {
     where
         T: AsRef<[u8]> + Sync,
     {
-        let sum = elements
-            .par_iter()
-            .map(|element| Self::h(element.as_ref()))
-            .reduce(|| [0, 0, 0, 0], Self::add_256);
-        self.current = Self::add_256(self.current, sum);
+        #[cfg(feature = "parallel")]
+        {
+            let sum = elements
+                .par_iter()
+                .map(|element| Self::h(element.as_ref()))
+                .reduce(|| [0, 0, 0, 0], Self::add_256);
+            self.current = Self::add_256(self.current, sum);
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            for element in elements {
+                self.add(element.as_ref());
+            }
+        }
     }
 
     pub fn remove_elements<'a, T>(&mut self, elements: &'a [T])
     where
         T: AsRef<[u8]> + Sync,
     {
-        let sum = elements
-            .par_iter()
-            .map(|element| {
-                let h = Self::h(element.as_ref());
-                [
-                    h[0].wrapping_neg(),
-                    h[1].wrapping_neg(),
-                    h[2].wrapping_neg(),
-                    h[3].wrapping_neg(),
-                ]
-            })
-            .reduce(|| [0, 0, 0, 0], Self::add_256);
-        self.current = Self::add_256(self.current, sum);
+        #[cfg(feature = "parallel")]
+        {
+            let sum = elements
+                .par_iter()
+                .map(|element| {
+                    let h = Self::h(element.as_ref());
+                    [
+                        h[0].wrapping_neg(),
+                        h[1].wrapping_neg(),
+                        h[2].wrapping_neg(),
+                        h[3].wrapping_neg(),
+                    ]
+                })
+                .reduce(|| [0, 0, 0, 0], Self::add_256);
+            self.current = Self::add_256(self.current, sum);
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            for element in elements {
+                self.remove(element.as_ref());
+            }
+        }
     }
 
     pub fn combine(&self, other: &Self) -> Self {
@@ -96,7 +115,10 @@ impl FastMultisetHash {
     }
 
     pub fn get_digest(&self) -> Option<Vec<u8>> {
-        self.get_compressed()
+        self.get_compressed().map(|compressed| {
+            let digest = blake3::hash(&compressed);
+            digest.as_bytes().to_vec()
+        })
     }
 
     pub fn to_compressed_bytes(&self) -> Vec<u8> {

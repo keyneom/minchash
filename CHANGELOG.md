@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-07-20
+## [0.4.0] - 2026-07-21
 
 ### Added
 
@@ -15,11 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multiplicity helpers: add_with_count / remove_with_count
 - Wire/storage round-trip: to_compressed_bytes / try_from_compressed_bytes (with DecodeError)
 - GitHub Actions CI (cargo test, cargo doc)
+- Optional `parallel` Cargo feature (default on) gating the rayon dependency
+- Crate-level doctest mirroring the README quick example
 
 ### Changed
 
 - Crate metadata for crates.io discoverability (repository, homepage, documentation, keywords, categories, readme)
 - README rewritten: Secure vs Fast threat models, bytes-first example, feature overview
+- Bump `k256` dependency from 0.11 to 0.14
+- `FastMultisetHash::get_digest` now returns blake3 of the compressed limb state (aligned with Secure)
+- Secure bulk `add_elements` / `remove_elements` sum element scalars then perform a single base-point multiply
+
+### Removed
+
+- Duplicate placeholder `LICENSE.txt` (keep `LICENSE`)
 
 ## [0.3.1] - 2025-02-08
 

@@ -12,11 +12,14 @@ readme = "README.md"
 keywords = ["multiset", "hash", "incremental", "cryptography", "ecmh"]
 categories = ["cryptography", "algorithms", "data-structures"]
 
+[features]
+default = ["parallel"]
+parallel = ["dep:rayon"]
+
 [dependencies]
-k256 = "0.11"
+k256 = { version = "0.14", default-features = false, features = ["arithmetic", "std"] }
 blake3 = "1.5"
-hex = "0.4"
-rayon = "1.10"
+rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
 itertools = "0.10.3"

@@ -1,9 +1,9 @@
 use crate::{DecodeError, MultisetHash};
 use blake3;
-use k256::elliptic_curve::bigint::U256;
 use k256::elliptic_curve::ops::Reduce;
-use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use k256::{AffinePoint, EncodedPoint, ProjectivePoint, Scalar};
+use k256::elliptic_curve::sec1::{FromSec1Point, ToSec1Point};
+use k256::{AffinePoint, FieldBytes, ProjectivePoint, Scalar};
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 #[derive(Clone)]
@@ -66,22 +66,18 @@ impl SecureMultisetHash {
     where
         T: AsRef<[u8]> + Sync,
     {
-        let sum = elements
-            .par_iter()
-            .map(|element| Self::h(element.as_ref()))
-            .reduce(|| ProjectivePoint::IDENTITY, |a, b| a + b);
-        self.current += sum;
+        // All element points are multiples of G, so sum scalars then one mul:
+        // sum(s_i * G) = (sum s_i) * G.
+        let scalar_sum = Self::sum_element_scalars(elements);
+        self.current += ProjectivePoint::GENERATOR * scalar_sum;
     }
 
     pub fn remove_elements<'a, T>(&mut self, elements: &'a [T])
     where
         T: AsRef<[u8]> + Sync,
     {
-        let sum = elements
-            .par_iter()
-            .map(|element| -Self::h(element.as_ref()))
-            .reduce(|| ProjectivePoint::IDENTITY, |a, b| a + b);
-        self.current += sum;
+        let scalar_sum = Self::sum_element_scalars(elements);
+        self.current += -(ProjectivePoint::GENERATOR * scalar_sum);
     }
 
     pub fn combine(&self, other: &Self) -> Self {
@@ -101,8 +97,7 @@ impl SecureMultisetHash {
             None
         } else {
             let affine = self.current.to_affine();
-            let encoded = affine.to_encoded_point(true); // compressed = true
-            Some(encoded.as_bytes().to_vec())
+            Some(affine.to_sec1_point(true).as_bytes().to_vec())
         }
     }
 
@@ -119,7 +114,7 @@ impl SecureMultisetHash {
             vec![0x00]
         } else {
             let affine = self.current.to_affine();
-            affine.to_encoded_point(true).as_bytes().to_vec()
+            affine.to_sec1_point(true).as_bytes().to_vec()
         }
     }
 
@@ -127,20 +122,42 @@ impl SecureMultisetHash {
         if bytes == [0x00] {
             return Ok(Self::new());
         }
-        let encoded = EncodedPoint::from_bytes(bytes).map_err(|_| DecodeError)?;
-        let affine = Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&encoded))
-            .ok_or(DecodeError)?;
+        let affine = AffinePoint::from_sec1_bytes(bytes).map_err(|_| DecodeError)?;
         Ok(Self {
             current: ProjectivePoint::from(affine),
         })
     }
 
+    /// Hash an element to a secp256k1 scalar (blake3 digest reduced mod n).
+    fn hash_to_scalar(data: &[u8]) -> Scalar {
+        let hash = blake3::hash(data);
+        let digest = FieldBytes::from(*hash.as_bytes());
+        Scalar::reduce(&digest)
+    }
+
     /// Helper function to hash an element (byte slice) to an EC point.
     fn h(data: &[u8]) -> ProjectivePoint {
-        let hash = blake3::hash(data);
-        let digest: [u8; 32] = *hash.as_bytes();
-        let scalar = <Scalar as Reduce<U256>>::from_be_bytes_reduced(digest.into());
-        ProjectivePoint::GENERATOR * scalar
+        ProjectivePoint::GENERATOR * Self::hash_to_scalar(data)
+    }
+
+    fn sum_element_scalars<'a, T>(elements: &'a [T]) -> Scalar
+    where
+        T: AsRef<[u8]> + Sync,
+    {
+        #[cfg(feature = "parallel")]
+        {
+            elements
+                .par_iter()
+                .map(|element| Self::hash_to_scalar(element.as_ref()))
+                .reduce(|| Scalar::ZERO, |a, b| a + b)
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            elements
+                .iter()
+                .map(|element| Self::hash_to_scalar(element.as_ref()))
+                .fold(Scalar::ZERO, |a, b| a + b)
+        }
     }
 }
 
@@ -356,5 +373,21 @@ mod tests {
             SecureMultisetHash::try_from_compressed_bytes(&ms.to_compressed_bytes()).unwrap();
         assert_eq!(ms, restored);
         assert!(SecureMultisetHash::try_from_compressed_bytes(&[0xff, 0x00]).is_err());
+    }
+
+    #[test]
+    fn test_bulk_matches_sequential() {
+        let elems = [b"a".as_slice(), b"b", b"c", b"a"];
+        let mut bulk = SecureMultisetHash::new();
+        bulk.add_elements(&elems);
+        let mut seq = SecureMultisetHash::new();
+        for e in elems {
+            seq.add(e);
+        }
+        assert_eq!(bulk, seq);
+        bulk.remove_elements(&[b"a".as_slice(), b"c"]);
+        seq.remove(b"a");
+        seq.remove(b"c");
+        assert_eq!(bulk, seq);
     }
 }

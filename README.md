@@ -11,6 +11,12 @@ Order-independent hashing for multisets with efficient incremental add/remove, p
 minchash = "0.4"
 ```
 
+Optional Cargo features:
+
+| Feature | Default | Description |
+|---|---|---|
+| `parallel` | yes | Enables rayon-backed `add_elements` / `remove_elements`. Disable with `default-features = false` if you do not want the rayon dependency. |
+
 ## Quick example
 
 ```rust
@@ -50,7 +56,7 @@ fn main() {
 |---|---|---|
 | **Construction** | blake3 → secp256k1 scalar × generator (ECMH-style) | Custom 4×u64 FNV-like mix + wrapping limb add |
 | **Threat model** | Collision / forgery hard under the elliptic-curve discrete-log assumption | **Not cryptographically secure** — fine for checksums, caches, search pruning; do **not** use against adversaries |
-| **Digest** | blake3 of compressed EC point | Raw 32-byte limb state |
+| **Digest** | blake3 of compressed EC point | blake3 of 32-byte limb state |
 | **Speed** | Slower (EC ops); parallel bulk helps | Extremely fast |
 
 Pick **Secure** when hashes may be compared across trust boundaries or used for integrity. Pick **Fast** when you only need order-independent equality / bookkeeping in a trusted setting.
@@ -61,7 +67,7 @@ Pick **Secure** when hashes may be compared across trust boundaries or used for 
 - **Multiplicity** — `add_with_count` / `remove_with_count` for repeated elements
 - **Homomorphic combine / difference** — merge or subtract independent hashes (`+` / `-` operators too)
 - **State bytes** — `to_compressed_bytes` / `try_from_compressed_bytes` for wire / storage round-trips
-- **Parallel bulk ops** — `add_elements` / `remove_elements` via rayon
+- **Parallel bulk ops** — `add_elements` / `remove_elements` via rayon (`parallel` feature, on by default)
 - **Element type** — any byte slice (`&[u8]`, strings via `.as_bytes()`, etc.)
 
 ## Potential uses

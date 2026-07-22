@@ -1,3 +1,34 @@
+//! Multiset incremental hashing (ECMH-style and a fast non-crypto variant).
+//!
+//! ```
+//! use minchash::{MultisetHash, SecureMultisetHash};
+//!
+//! let mut a = SecureMultisetHash::new();
+//! a.add(b"apple");
+//! a.add(b"banana");
+//!
+//! let mut b = SecureMultisetHash::new();
+//! b.add(b"banana");
+//! b.add(b"apple");
+//!
+//! // Order does not matter
+//! assert_eq!(a.get_digest(), b.get_digest());
+//!
+//! // Bytes are first-class — any `&[u8]` works
+//! a.add(&[0xde, 0xad, 0xbe, 0xef]);
+//!
+//! // Homomorphic merge of independent hashes
+//! let mut left = SecureMultisetHash::new();
+//! left.add(b"x");
+//! let mut right = SecureMultisetHash::new();
+//! right.add(b"y");
+//! let merged = left.combine(&right);
+//! let mut expected = SecureMultisetHash::new();
+//! expected.add(b"x");
+//! expected.add(b"y");
+//! assert_eq!(merged.get_compressed(), expected.get_compressed());
+//! ```
+
 mod secure;
 mod fast;
 
@@ -61,7 +92,7 @@ pub trait MultisetHash: Clone {
     /// Serialize the full state (including empty/identity) for storage or the wire.
     fn to_compressed_bytes(&self) -> Vec<u8>;
 
-    /// Restore state from [`to_compressed_bytes`].
+    /// Restore state from [`Self::to_compressed_bytes`].
     fn try_from_compressed_bytes(bytes: &[u8]) -> Result<Self, DecodeError>
     where
         Self: Sized;
